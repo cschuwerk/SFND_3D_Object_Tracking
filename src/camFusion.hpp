@@ -17,5 +17,9 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr,
                       std::vector<cv::DMatch> kptMatches, double frameRate, double &TTC, cv::Mat *visImg=nullptr);
 void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
-                     std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC);                  
+                     std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC);
+
+double calculateMedian(std::vector<double> &values);
+double calculateMean(std::vector<double> &values);
+double calculateStd(std::vector<double> &values, double &mean);
 #endif /* camFusion_hpp */

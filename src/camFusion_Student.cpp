@@ -149,9 +149,128 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
 void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
                      std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC)
 {
-    // ...
+
+    double t = (double)cv::getTickCount();
+
+    double dT = 1/frameRate;        // time between two measurements in seconds
+
+//    // Using the median
+//    double medianPrev, medianCurr;
+//    std::vector<double> distPrev, distCurr;
+//
+//    for (auto it = lidarPointsPrev.begin(); it != lidarPointsPrev.end(); ++it)
+//    {
+//        distPrev.push_back(it->x);
+//        //minXPrev = minXPrev > it->x ? it->x : minXPrev;
+//    }
+//
+//    for (auto it = lidarPointsCurr.begin(); it != lidarPointsCurr.end(); ++it)
+//    {
+//        distCurr.push_back(it->x);
+//    }
+//
+//    sort(distPrev.begin(), distPrev.end());
+//    sort(distCurr.begin(), distCurr.end());
+//
+//    int distPrevSize = distPrev.size();
+//    int distCurrSize = distCurr.size();
+//
+//    medianPrev = distPrevSize%2==0 ? (distPrev[distPrevSize / 2 - 1] + distPrev[distPrevSize / 2]) / 2 : distPrev[distPrevSize / 2];
+//    medianCurr = distCurrSize%2==0 ? (distCurr[distCurrSize / 2 - 1] + distCurr[distCurrSize / 2]) / 2 : distCurr[distCurrSize / 2];
+//
+//    // compute TTC from both measurements
+//    TTC = medianCurr * dT / (medianPrev - medianCurr);
+
+
+    // using mean/std
+    double meanPrev=0.0, meanCurr=0.0, meanPrevFiltered=0.0, meanCurrFiltered=0.0, stdPrev=0.0, stdCurr=0.0;
+    std::vector<double> distPrev, distCurr;
+
+    // Calculate the mean
+    for (auto it = lidarPointsPrev.begin(); it != lidarPointsPrev.end(); ++it)
+    {
+        meanPrev+=it->x;
+        distPrev.push_back(it->x);
+    }
+    meanPrev = meanPrev / lidarPointsPrev.size();
+
+    for (auto it = lidarPointsCurr.begin(); it != lidarPointsCurr.end(); ++it)
+    {
+        meanCurr+=it->x;
+        distCurr.push_back(it->x);
+    }
+    meanCurr = meanCurr / lidarPointsCurr.size();
+
+
+    // Calculate the standard deviation
+    double sumsd = 0.0;
+    std::for_each (distPrev.begin(), distPrev.end(), [&](const double d) {
+        sumsd += (d - meanPrev) * (d - meanPrev);
+    });
+    stdPrev = sqrt(sumsd / (distPrev.size()));
+
+    sumsd = 0.0;
+    std::for_each (distCurr.begin(), distCurr.end(), [&](const double d) {
+        sumsd += (d - meanCurr) * (d - meanCurr);
+    });
+    stdCurr = sqrt(sumsd / (distCurr.size()));
+
+
+    // Filter points based on the standard deviation and calculate filtered mean
+    int numPoints=0;
+    for (auto it = distPrev.begin(); it != distPrev.end(); ++it)
+    {
+        if(std::abs(*it) < meanPrev+stdPrev ) {
+            meanPrevFiltered+=*it;
+            numPoints++;
+        }
+    }
+    meanPrevFiltered = meanPrevFiltered / numPoints;;
+
+    numPoints=0;
+    for (auto it = distCurr.begin(); it != distCurr.end(); ++it)
+    {
+        if(std::abs(*it) < meanCurr+stdCurr ) {
+            meanCurrFiltered+=*it;
+            numPoints++;
+        }
+    }
+    meanCurrFiltered = meanCurrFiltered / numPoints;
+
+    // compute TTC from both measurements
+    TTC = meanCurrFiltered * dT / (meanPrevFiltered - meanCurrFiltered);
+
+    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency();
+    cout << "computeTTCLidar in " << 1000 * t / 1.0 << " ms" << endl;
 }
 
+double calculateMedian(std::vector<double> &values) {
+
+    sort(values.begin(), values.end());
+    int size = values.size();
+
+    return size%2==0 ? (values[size / 2 - 1] + values[size / 2]) / 2 : values[size / 2];
+}
+
+double calculateMean(std::vector<double> &values) {
+
+    if(values.size() == 0)
+        return 0.0;
+
+    return std::accumulate(values.begin(), values.end(), 0.0)/values.size();
+}
+
+double calculateStd(std::vector<double> &values, double &mean) {
+
+    if(values.size() == 0)
+        return 0.0;
+
+    double sumsd = 0.0;
+    std::for_each (values.begin(), values.end(), [&](const double d) {
+        sumsd += (d - mean) * (d - mean);
+    });
+    return sqrt(sumsd / (values.size()));
+}
 
 void matchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches, DataFrame &prevFrame, DataFrame &currFrame)
 {
@@ -220,5 +339,4 @@ void matchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bb
     t = ((double)cv::getTickCount() - t) / cv::getTickFrequency();
     cout << "matchBoundingBoxes in " << 1000 * t / 1.0 << " ms" << endl;
 
-    //std::cout << currFrameMatchToBBox.size() << " " << prevFrameBBoxToMatch.size() << " " << currFrameBBoxMatches.size();
 }
