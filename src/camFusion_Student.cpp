@@ -161,7 +161,6 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
 //    for (auto it = lidarPointsPrev.begin(); it != lidarPointsPrev.end(); ++it)
 //    {
 //        distPrev.push_back(it->x);
-//        //minXPrev = minXPrev > it->x ? it->x : minXPrev;
 //    }
 //
 //    for (auto it = lidarPointsCurr.begin(); it != lidarPointsCurr.end(); ++it)
@@ -169,14 +168,8 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
 //        distCurr.push_back(it->x);
 //    }
 //
-//    sort(distPrev.begin(), distPrev.end());
-//    sort(distCurr.begin(), distCurr.end());
-//
-//    int distPrevSize = distPrev.size();
-//    int distCurrSize = distCurr.size();
-//
-//    medianPrev = distPrevSize%2==0 ? (distPrev[distPrevSize / 2 - 1] + distPrev[distPrevSize / 2]) / 2 : distPrev[distPrevSize / 2];
-//    medianCurr = distCurrSize%2==0 ? (distCurr[distCurrSize / 2 - 1] + distCurr[distCurrSize / 2]) / 2 : distCurr[distCurrSize / 2];
+//    medianPrev = calculateMedian(distPrev);
+//    medianCurr = calculateMedian(distCurr);;
 //
 //    // compute TTC from both measurements
 //    TTC = medianCurr * dT / (medianPrev - medianCurr);
@@ -201,41 +194,13 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
     }
     meanCurr = meanCurr / lidarPointsCurr.size();
 
-
     // Calculate the standard deviation
-    double sumsd = 0.0;
-    std::for_each (distPrev.begin(), distPrev.end(), [&](const double d) {
-        sumsd += (d - meanPrev) * (d - meanPrev);
-    });
-    stdPrev = sqrt(sumsd / (distPrev.size()));
-
-    sumsd = 0.0;
-    std::for_each (distCurr.begin(), distCurr.end(), [&](const double d) {
-        sumsd += (d - meanCurr) * (d - meanCurr);
-    });
-    stdCurr = sqrt(sumsd / (distCurr.size()));
-
+    stdPrev = calculateStd(distPrev, meanPrev);
+    stdCurr = calculateStd(distCurr, meanCurr);
 
     // Filter points based on the standard deviation and calculate filtered mean
-    int numPoints=0;
-    for (auto it = distPrev.begin(); it != distPrev.end(); ++it)
-    {
-        if(std::abs(*it) < meanPrev+stdPrev ) {
-            meanPrevFiltered+=*it;
-            numPoints++;
-        }
-    }
-    meanPrevFiltered = meanPrevFiltered / numPoints;;
-
-    numPoints=0;
-    for (auto it = distCurr.begin(); it != distCurr.end(); ++it)
-    {
-        if(std::abs(*it) < meanCurr+stdCurr ) {
-            meanCurrFiltered+=*it;
-            numPoints++;
-        }
-    }
-    meanCurrFiltered = meanCurrFiltered / numPoints;
+    meanPrevFiltered = meanFilterOutliers(distPrev, meanPrev, stdPrev);
+    meanCurrFiltered = meanFilterOutliers(distCurr, meanCurr, stdCurr);
 
     // compute TTC from both measurements
     TTC = meanCurrFiltered * dT / (meanPrevFiltered - meanCurrFiltered);
@@ -252,14 +217,6 @@ double calculateMedian(std::vector<double> &values) {
     return size%2==0 ? (values[size / 2 - 1] + values[size / 2]) / 2 : values[size / 2];
 }
 
-double calculateMean(std::vector<double> &values) {
-
-    if(values.size() == 0)
-        return 0.0;
-
-    return std::accumulate(values.begin(), values.end(), 0.0)/values.size();
-}
-
 double calculateStd(std::vector<double> &values, double &mean) {
 
     if(values.size() == 0)
@@ -270,6 +227,25 @@ double calculateStd(std::vector<double> &values, double &mean) {
         sumsd += (d - mean) * (d - mean);
     });
     return sqrt(sumsd / (values.size()));
+}
+
+double meanFilterOutliers(std::vector<double> &values, double &mean, double &threshold) {
+
+    int numPoints=0;
+    double meanFiltered = 0.0;
+
+    for (auto it = values.begin(); it != values.end(); ++it)
+    {
+        if(std::abs(*it) < mean+threshold ) {
+            meanFiltered+=*it;
+            numPoints++;
+        }
+    }
+    if(numPoints == 0) {
+        return 0.0;
+    }
+
+    return meanFiltered / numPoints;
 }
 
 void matchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches, DataFrame &prevFrame, DataFrame &currFrame)
