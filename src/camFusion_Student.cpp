@@ -2,6 +2,7 @@
 #include <iostream>
 #include <algorithm>
 #include <numeric>
+#include <map>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
@@ -154,5 +155,70 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
 
 void matchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches, DataFrame &prevFrame, DataFrame &currFrame)
 {
-    // ...
+
+    const int minNumberOfMatches = 10; // Bounding box matches are only considered, if there are at least minNumberOfMatches common keypoints
+    double t = (double)cv::getTickCount();
+
+    // Iterate through all matches
+    std::multimap<int,int> prevFrameMatchToBBox;    // contains a mapping between keypoint id and bbox id
+    std::map<int,std::vector<int>> currFrameBBoxMatches; // contains a map between the bbox id and a vector of all keypoints within this bbox in the current frame
+
+    for(auto match=matches.begin(); match!=matches.end(); ++match) {
+
+        // Go through all bounding boxes of the current frame
+        for(auto bbox=currFrame.boundingBoxes.begin(); bbox!=currFrame.boundingBoxes.end(); ++bbox) {
+
+            currFrameBBoxMatches.insert({bbox->boxID,std::vector<int>()});
+
+            //Check if the keypoint lies inside the bbox and add it to the vector
+            if(bbox->roi.contains(currFrame.keypoints.at(match->trainIdx).pt)) {
+                currFrameBBoxMatches.at(bbox->boxID).push_back(match->queryIdx);
+            }
+        }
+
+        // Go through all bounding boxes of the previous frame
+        for(auto bbox=prevFrame.boundingBoxes.begin(); bbox!=prevFrame.boundingBoxes.end(); ++bbox) {
+
+            //Check if the keypoint lies inside the bbox
+            if(bbox->roi.contains(prevFrame.keypoints.at(match->queryIdx).pt)) {
+                prevFrameMatchToBBox.insert({match->queryIdx, bbox->boxID});
+            }
+        }
+    } // end iterate over all matches
+
+    // Go through all bounding boxes in the current image and find the bbox in the previous image with the most common keypoints
+    for(auto bbox=currFrameBBoxMatches.begin(); bbox!=currFrameBBoxMatches.end(); ++bbox ) {
+        std::map<int,int> matchCounter;
+
+        // Go through all matches in this bbox
+        for(int i=0; i <=bbox->second.size(); ++i) {
+            // Check if this match id is associated with which bbox
+            // bbox->first is the ID of the bbox
+            // bbox->second[i] is the ID of the match
+            auto ret = prevFrameMatchToBBox.equal_range(bbox->second[i]);
+            for(auto it=ret.first; it!=ret.second; ++it) {
+                //it->second is the bbox id in the previous frame
+                if(matchCounter.find(it->second) != matchCounter.end()) {
+                    matchCounter.at(it->second)++;
+                }
+                else {
+                    matchCounter.insert({it->second,0});
+                }
+            }
+        }
+
+        // Find the bbox id with the max number of identical keypoint matches
+        auto bestMatch = std::max_element(matchCounter.begin(), matchCounter.end(), [] (const std::pair<int,int> &p1, const std::pair<int,int> &p2) { return p1.second < p2.second; } );
+
+        // Consider the match only if there are at least minNumberOfMatches
+        if(bestMatch->second >= minNumberOfMatches) {
+            bbBestMatches.insert({bbox->first, bestMatch->first});
+        }
+
+    } // end iterate over all bboxes
+
+    t = ((double)cv::getTickCount() - t) / cv::getTickFrequency();
+    cout << "matchBoundingBoxes in " << 1000 * t / 1.0 << " ms" << endl;
+
+    //std::cout << currFrameMatchToBBox.size() << " " << prevFrameBBoxToMatch.size() << " " << currFrameBBoxMatches.size();
 }
