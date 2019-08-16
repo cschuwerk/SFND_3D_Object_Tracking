@@ -37,4 +37,19 @@ struct DataFrame { // represents the available sensor information at the same ti
     std::map<int,int> bbMatches; // bounding box matches between previous and current frame
 };
 
+struct resultTTC {
+    std::string detector;
+    std::string descriptor;
+    std::vector<double> TTCCamera;
+    std::vector<double> TTCLidar;
+
+    void print(void) {
+        std::cout << "Frame" << "\t" << "Detector" << "\t" << "Descriptor" << "\t" << "TTC Lidar" << "\t" << "TTC Camera" << "\t" << "Difference" << std::endl;
+        for(unsigned int i=0; i<TTCCamera.size(); ++i) {
+            std::cout << i << "," << detector << "\t" << descriptor << "\t" << TTCLidar[i] << "\t" << TTCCamera[i] << "\t" << TTCLidar[i]-TTCCamera[i] << std::endl;
+        }
+
+    }
+};
+
 #endif /* dataStructures_h */

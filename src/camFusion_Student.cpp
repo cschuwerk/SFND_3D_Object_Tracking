@@ -134,31 +134,10 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 // associate a given bounding box with the keypoints it contains
 void clusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr, std::vector<cv::DMatch> &kptMatches)
 {
-    double mean=0.0, std = 0.0;
-    for(auto kptMatch=kptMatches.begin(); kptMatch!=kptMatches.end(); ++kptMatch) {
-        mean+=kptMatch->distance;
-    }
-    mean/=kptMatches.size();
-
-    for(auto kptMatch=kptMatches.begin(); kptMatch!=kptMatches.end(); ++kptMatch) {
-        std+=(kptMatch->distance - mean)*(kptMatch->distance - mean);
-    }
-    std/=kptMatches.size();
-    std=sqrt(std);
-
-    // Go through all keypoint matches
-    for(auto kptMatch=kptMatches.begin(); kptMatch!=kptMatches.end(); ++kptMatch) {
-
-        if(fabs(kptMatch->distance) > mean+std) {
-            continue;
-        }
-
-        // Check if the keypoint id exits in the list of current keypoints and if the keypoint is within the current bounding box
-        if(kptMatch->queryIdx < kptsCurr.size()) {
-            if(boundingBox.roi.contains(kptsCurr.at(kptMatch->queryIdx).pt)) {
-                boundingBox.kptMatches.push_back(*kptMatch);
-                boundingBox.keypoints.push_back(kptsCurr.at(kptMatch->queryIdx));
-            }
+    // Loop over all matches
+    for (cv::DMatch currMatch : kptMatches) {
+        if (boundingBox.roi.contains(kptsCurr[currMatch.trainIdx].pt)) {
+            boundingBox.kptMatches.push_back(currMatch);
         }
     }
 }
@@ -206,11 +185,9 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
         return;
     }
 
-    // compute camera-based TTC from distance ratios
+    // compute camera-based TTC from distance ratios and the median
     double dT = 1 / frameRate;
-    unsigned int size = distRatios.size();
-    sort(distRatios.begin(), distRatios.end());
-    double medianDistRatio = (size%2==0) ? (distRatios[size/2-1] + distRatios[size/2])/2.0 : distRatios[size/2]; // Bedingung ? if true : else
+    double medianDistRatio = calculateMedian(distRatios);
     TTC = -dT / (1 - medianDistRatio);
 }
 
