@@ -376,7 +376,7 @@ void matchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bb
 
         // Consider the match only if there are at least minNumberOfMatches
         if(bestMatch->second >= minNumberOfMatches) {
-            bbBestMatches.insert({bbox->first, bestMatch->first});
+            bbBestMatches.insert({bestMatch->first, bbox->first});
         }
 
     } // end iterate over all bboxes
