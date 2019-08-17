@@ -155,7 +155,7 @@ int main(int argc, const char *argv[])
 
         // extract 2D keypoints from current image
         vector<cv::KeyPoint> keypoints; // create empty feature list for current image
-        string detectorType = "FAST";
+        string detectorType = "BRISK";
         detKeypoints(keypoints, imgGray, detectorType);
         res.detector = detectorType;
 
@@ -229,8 +229,8 @@ int main(int argc, const char *argv[])
 
                 for(auto bbboxMatch = bbBestMatches.begin(); bbboxMatch != bbBestMatches.end(); ++bbboxMatch) {
                     BoundingBox *prevBB, *currBB;
-                    prevBB = & (dataBuffer.end() - 2)->boundingBoxes.at(bbboxMatch->second);
-                    currBB = & (dataBuffer.end() - 1)->boundingBoxes.at(bbboxMatch->first);
+                    prevBB = & (dataBuffer.end() - 2)->boundingBoxes.at(bbboxMatch->first);
+                    currBB = & (dataBuffer.end() - 1)->boundingBoxes.at(bbboxMatch->second);
                     cv::Scalar color(rand() % 255,rand() % 255,rand() % 255);
                     cv::rectangle(visImgPrev, cv::Point(prevBB->roi.x, prevBB->roi.y), cv::Point(prevBB->roi.x + prevBB->roi.width, prevBB->roi.y + prevBB->roi.height), color, 2);
                     cv::rectangle(visImg, cv::Point(currBB->roi.x, currBB->roi.y), cv::Point(currBB->roi.x + currBB->roi.width, currBB->roi.y + currBB->roi.height), color, 2);
@@ -285,8 +285,7 @@ int main(int argc, const char *argv[])
                     //// STUDENT ASSIGNMENT
                     //// TASK FP.2 -> compute time-to-collision based on Lidar data (implement -> computeTTCLidar)
                     double ttcLidar;
-                    computeTTCLidar(prevBB->lidarPoints, currBB->lidarPoints, sensorFrameRate, ttcLidar);
-                    res.TTCLidar.push_back(ttcLidar);
+                    computeTTCLidar(prevBB->lidarPoints, currBB->lidarPoints, sensorFrameRate, ttcLidar,res);
                     //// EOF STUDENT ASSIGNMENT
 
                     //// STUDENT ASSIGNMENT
@@ -296,6 +295,7 @@ int main(int argc, const char *argv[])
                     clusterKptMatchesWithROI(*currBB, (dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints, (dataBuffer.end() - 1)->kptMatches);                    
                     computeTTCCamera((dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints, currBB->kptMatches, sensorFrameRate, ttcCamera);
                     res.TTCCamera.push_back(ttcCamera);
+                    std::cout << "ttcLidar " << ttcLidar << std::endl;
                     //// EOF STUDENT ASSIGNMENT
 
                     // Visualize the vehicle ahead and the lidar points/keypoints

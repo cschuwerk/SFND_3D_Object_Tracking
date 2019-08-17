@@ -42,11 +42,13 @@ struct resultTTC {
     std::string descriptor;
     std::vector<double> TTCCamera;
     std::vector<double> TTCLidar;
+    std::vector<double> LidarMedian;
+    std::vector<double> LidarMin;
 
     void print(void) {
-        std::cout << "Frame" << "\t" << "Detector" << "\t" << "Descriptor" << "\t" << "TTC Lidar" << "\t" << "TTC Camera" << "\t" << "Difference" << std::endl;
+        std::cout << "Frame" << "\t" << "Detector" << "\t" << "Descriptor" << "\t" << "TTC Lidar" << "\t" << "TTC Camera" << "\t" << "TTC Difference" << "\t" << "Lidar median" << "\t" << "Lidar min" << std::endl;
         for(unsigned int i=0; i<TTCCamera.size(); ++i) {
-            std::cout << i << "," << detector << "\t" << descriptor << "\t" << TTCLidar[i] << "\t" << TTCCamera[i] << "\t" << TTCLidar[i]-TTCCamera[i] << std::endl;
+            std::cout << i+1 << "\t" << detector << "\t" << descriptor << "\t" << TTCLidar[i] << "\t" << TTCCamera[i] << "\t" << TTCLidar[i]-TTCCamera[i] << "\t" << LidarMedian[i] << "\t" << LidarMin[i] << std::endl;
         }
 
     }

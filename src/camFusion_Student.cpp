@@ -76,6 +76,7 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
         // plot Lidar points into top view image
         int top=1e8, left=1e8, bottom=0.0, right=0.0; 
         float xwmin=1e8, ywmin=1e8, ywmax=-1e8;
+        std::vector<double> xValues;
         for (auto it2 = it1->lidarPoints.begin(); it2 != it1->lidarPoints.end(); ++it2)
         {
             // world coordinates
@@ -97,17 +98,28 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 
             // draw individual point
             cv::circle(topviewImg, cv::Point(x, y), 4, currColor, -1);
+
+            xValues.push_back(xw);
+        }
+
+        // Calculate median of xw values
+        double xw_median = calculateMedian(xValues);
+        if(xw_median != NAN) {
+            int y = (-xw_median * imageSize.height / worldSize.height) + imageSize.height;
+            cv::rectangle(topviewImg, cv::Point(left+(right-left)/2-5, y+5), cv::Point(left+(right-left)/2+5,y-5 ), cv::Scalar(0,0,255),-1);
         }
 
         // draw enclosing rectangle
         cv::rectangle(topviewImg, cv::Point(left, top), cv::Point(right, bottom),cv::Scalar(0,0,0), 2);
 
         // augment object with some key data
-        char str1[200], str2[200];
+        char str1[200], str2[200], str3[200];
         sprintf(str1, "id=%d, #pts=%d", it1->boxID, (int)it1->lidarPoints.size());
         putText(topviewImg, str1, cv::Point2f(left-250, bottom+50), cv::FONT_ITALIC, 2, currColor);
         sprintf(str2, "xmin=%2.2f m, yw=%2.2f m", xwmin, ywmax-ywmin);
-        putText(topviewImg, str2, cv::Point2f(left-250, bottom+125), cv::FONT_ITALIC, 2, currColor);  
+        putText(topviewImg, str2, cv::Point2f(left-250, bottom+125), cv::FONT_ITALIC, 2, currColor);
+        sprintf(str3, "xmed=%2.2fm", xw_median);
+        putText(topviewImg, str3, cv::Point2f(left-250, bottom+200), cv::FONT_ITALIC, 2, currColor);
     }
 
     // plot distance markers
@@ -134,12 +146,35 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 // associate a given bounding box with the keypoints it contains
 void clusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr, std::vector<cv::DMatch> &kptMatches)
 {
-    // Loop over all matches
-    for (cv::DMatch currMatch : kptMatches) {
-        if (boundingBox.roi.contains(kptsCurr[currMatch.trainIdx].pt)) {
-            boundingBox.kptMatches.push_back(currMatch);
+    double mean=0.0, std=0.0;
+    std::vector<double> kptDistances;
+    // Iterate over all matches and calculate the Euclidian distance
+    for(auto kptMatch=kptMatches.begin(); kptMatch!=kptMatches.end(); ++kptMatch) {
+        double distance = cv::norm(kptsPrev[kptMatch->queryIdx].pt - kptsCurr[kptMatch->trainIdx].pt);
+        kptDistances.push_back(distance);
+        mean+= distance;
+    }
+
+    // Calculate the mean and standard deviation
+    mean/=kptMatches.size();
+    std = calculateStd(kptDistances, mean);
+
+    // Loop over all matches, filter them based and add to the bounding box if they are within the ROI
+    int n=0;
+    for(int i=0; i<kptMatches.size(); ++i) {
+
+        if(boundingBox.roi.contains(kptsCurr[kptMatches[i].trainIdx].pt)) {
+
+            if(kptDistances[i] > mean+std || kptDistances[i] < mean-std) {
+                n++;
+                continue;
+            }
+            boundingBox.kptMatches.push_back(kptMatches[i]);
+            boundingBox.keypoints.push_back(kptsCurr.at(kptMatches[i].trainIdx));
         }
     }
+    // Only for debugging
+    std::cout << "Filtered " << n << " outliers (" << boundingBox.kptMatches.size() << "/" << kptMatches.size() << ")" << std::endl;
 }
 
 
@@ -193,63 +228,36 @@ void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPo
 
 
 void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
-                     std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC)
+                     std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC, resultTTC &res)
 {
 
     double t = (double)cv::getTickCount();
 
     double dT = 1/frameRate;        // time between two measurements in seconds
 
-//    // Using the median
-//    double medianPrev, medianCurr;
-//    std::vector<double> distPrev, distCurr;
-//
-//    for (auto it = lidarPointsPrev.begin(); it != lidarPointsPrev.end(); ++it)
-//    {
-//        distPrev.push_back(it->x);
-//    }
-//
-//    for (auto it = lidarPointsCurr.begin(); it != lidarPointsCurr.end(); ++it)
-//    {
-//        distCurr.push_back(it->x);
-//    }
-//
-//    medianPrev = calculateMedian(distPrev);
-//    medianCurr = calculateMedian(distCurr);;
-//
-//    // compute TTC from both measurements
-//    TTC = medianCurr * dT / (medianPrev - medianCurr);
-
-
-    // using mean/std
-    double meanPrev=0.0, meanCurr=0.0, meanPrevFiltered=0.0, meanCurrFiltered=0.0, stdPrev=0.0, stdCurr=0.0;
+    // Using the median
+    double medianPrev=0.0, medianCurr=0.0, minCurr=0.0;
     std::vector<double> distPrev, distCurr;
 
-    // Calculate the mean
     for (auto it = lidarPointsPrev.begin(); it != lidarPointsPrev.end(); ++it)
     {
-        meanPrev+=it->x;
         distPrev.push_back(it->x);
     }
-    meanPrev = meanPrev / lidarPointsPrev.size();
 
     for (auto it = lidarPointsCurr.begin(); it != lidarPointsCurr.end(); ++it)
     {
-        meanCurr+=it->x;
         distCurr.push_back(it->x);
+        minCurr = (it->x > minCurr) ? it->x : minCurr;
     }
-    meanCurr = meanCurr / lidarPointsCurr.size();
 
-    // Calculate the standard deviation
-    stdPrev = calculateStd(distPrev, meanPrev);
-    stdCurr = calculateStd(distCurr, meanCurr);
-
-    // Filter points based on the standard deviation and calculate filtered mean
-    meanPrevFiltered = meanFilterOutliers(distPrev, meanPrev, stdPrev);
-    meanCurrFiltered = meanFilterOutliers(distCurr, meanCurr, stdCurr);
+    medianPrev = calculateMedian(distPrev);
+    medianCurr = calculateMedian(distCurr);
+    res.LidarMedian.push_back(medianCurr);
+    res.LidarMin.push_back(minCurr);
 
     // compute TTC from both measurements
-    TTC = meanCurrFiltered * dT / (meanPrevFiltered - meanCurrFiltered);
+    TTC = medianCurr * dT / (medianPrev - medianCurr);
+    res.TTCLidar.push_back(TTC);
 
     t = ((double)cv::getTickCount() - t) / cv::getTickFrequency();
     cout << "computeTTCLidar in " << 1000 * t / 1.0 << " ms" << endl;
@@ -259,6 +267,8 @@ double calculateMedian(std::vector<double> &values) {
 
     sort(values.begin(), values.end());
     int size = values.size();
+
+    if(size == 0) return NAN;
 
     return size%2==0 ? (values[size / 2 - 1] + values[size / 2]) / 2 : values[size / 2];
 }
