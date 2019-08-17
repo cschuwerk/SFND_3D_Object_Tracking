@@ -21,5 +21,4 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
 
 double calculateMedian(std::vector<double> &values);
 double calculateStd(std::vector<double> &values, double &mean);
-double meanFilterOutliers(std::vector<double> &values, double &mean, double &threshold);
 #endif /* camFusion_hpp */

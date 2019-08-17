@@ -146,35 +146,51 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 // associate a given bounding box with the keypoints it contains
 void clusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr, std::vector<cv::DMatch> &kptMatches)
 {
-    double mean=0.0, std=0.0;
+    const bool filterOutliers = true;
     std::vector<double> kptDistances;
-    // Iterate over all matches and calculate the Euclidian distance
-    for(auto kptMatch=kptMatches.begin(); kptMatch!=kptMatches.end(); ++kptMatch) {
-        double distance = cv::norm(kptsPrev[kptMatch->queryIdx].pt - kptsCurr[kptMatch->trainIdx].pt);
-        kptDistances.push_back(distance);
-        mean+= distance;
+    double mean=0.0,minDistance,maxDistance;
+
+    if(filterOutliers) {
+        // Iterate over all matches and calculate the Euclidian distance
+        for(auto kptMatch=kptMatches.begin(); kptMatch!=kptMatches.end(); ++kptMatch) {
+            if(boundingBox.roi.contains(kptsCurr[kptMatch->trainIdx].pt)) {
+                double distance = cv::norm(kptsPrev[kptMatch->queryIdx].pt - kptsCurr[kptMatch->trainIdx].pt);
+                kptDistances.push_back(distance);
+                mean+=distance;
+            }
+        }
+
+        // Find the min./max distance based on the mean and standard deviation
+        mean = mean/kptDistances.size();
+        double std = calculateStd(kptDistances, mean);
+        minDistance = mean - 2*std;
+        maxDistance = mean + 2*std;
+
+        // Find the the min./max. distances, discarding most extreme 10% of the values
+        //sort(kptDistances.begin(), kptDistances.end());
+        //minDistance = kptDistances[int(floor(kptDistances.size()*0.1))];
+        //maxDistance = kptDistances[int(floor(kptDistances.size()*0.9))];
     }
 
-    // Calculate the mean and standard deviation
-    mean/=kptMatches.size();
-    std = calculateStd(kptDistances, mean);
-
-    // Loop over all matches, filter them based and add to the bounding box if they are within the ROI
+    // Loop over all matches, filter them and add them to the bounding box if they are within the ROI
     int n=0;
     for(int i=0; i<kptMatches.size(); ++i) {
 
         if(boundingBox.roi.contains(kptsCurr[kptMatches[i].trainIdx].pt)) {
 
-            if(kptDistances[i] > mean+std || kptDistances[i] < mean-std) {
-                n++;
-                continue;
+            if(filterOutliers) {
+                double distance = cv::norm(kptsPrev[kptMatches[i].queryIdx].pt - kptsCurr[kptMatches[i].trainIdx].pt);
+                if(distance< minDistance || distance > maxDistance) {
+                    n++;
+                    continue;
+                }
             }
             boundingBox.kptMatches.push_back(kptMatches[i]);
             boundingBox.keypoints.push_back(kptsCurr.at(kptMatches[i].trainIdx));
         }
     }
     // Only for debugging
-    std::cout << "Filtered " << n << " outliers (" << boundingBox.kptMatches.size() << "/" << kptMatches.size() << ")" << std::endl;
+    std::cout << "Filtered " << n << " outliers (kept " << boundingBox.kptMatches.size() << " out of " << kptMatches.size() << ")" << std::endl;
 }
 
 
@@ -236,27 +252,33 @@ void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
     double dT = 1/frameRate;        // time between two measurements in seconds
 
     // Using the median
-    double medianPrev=0.0, medianCurr=0.0, minCurr=0.0;
+    double medianPrev=0.0, medianCurr=0.0, minCurr=10000.0, minPrev=10000.0;
     std::vector<double> distPrev, distCurr;
 
     for (auto it = lidarPointsPrev.begin(); it != lidarPointsPrev.end(); ++it)
     {
         distPrev.push_back(it->x);
+        minPrev = (it->x < minPrev) ? it->x : minPrev;
+
     }
 
     for (auto it = lidarPointsCurr.begin(); it != lidarPointsCurr.end(); ++it)
     {
         distCurr.push_back(it->x);
-        minCurr = (it->x > minCurr) ? it->x : minCurr;
+        minCurr = (it->x < minCurr) ? it->x : minCurr;
     }
 
+    // Calculate the median of the lidar values in x-direction
     medianPrev = calculateMedian(distPrev);
     medianCurr = calculateMedian(distCurr);
+
+    // Store values for evaluation purposes
     res.LidarMedian.push_back(medianCurr);
     res.LidarMin.push_back(minCurr);
 
     // compute TTC from both measurements
     TTC = medianCurr * dT / (medianPrev - medianCurr);
+    //TTC = minCurr * dT / (minPrev - minCurr);
     res.TTCLidar.push_back(TTC);
 
     t = ((double)cv::getTickCount() - t) / cv::getTickFrequency();
@@ -282,32 +304,13 @@ double calculateStd(std::vector<double> &values, double &mean) {
     std::for_each (values.begin(), values.end(), [&](const double d) {
         sumsd += (d - mean) * (d - mean);
     });
-    return sqrt(sumsd / (values.size()));
-}
-
-double meanFilterOutliers(std::vector<double> &values, double &mean, double &threshold) {
-
-    int numPoints=0;
-    double meanFiltered = 0.0;
-
-    for (auto it = values.begin(); it != values.end(); ++it)
-    {
-        if(std::abs(*it) < mean+threshold ) {
-            meanFiltered+=*it;
-            numPoints++;
-        }
-    }
-    if(numPoints == 0) {
-        return 0.0;
-    }
-
-    return meanFiltered / numPoints;
+    return sqrt(sumsd / values.size());
 }
 
 void matchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches, DataFrame &prevFrame, DataFrame &currFrame)
 {
 
-    const int minNumberOfMatches = 10; // Bounding box matches are only considered, if there are at least minNumberOfMatches common keypoints
+    const int minNumberOfMatches = 5; // Bounding box matches are only considered, if there are at least minNumberOfMatches common keypoints
     double t = (double)cv::getTickCount();
 
     // Iterate through all matches
@@ -342,7 +345,7 @@ void matchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bb
         std::map<int,int> matchCounter;
 
         // Go through all matches in this bbox
-        for(int i=0; i <=bbox->second.size(); ++i) {
+        for(int i=0; i <bbox->second.size(); ++i) {
             // Check if this match id is associated with which bbox
             // bbox->first is the ID of the bbox
             // bbox->second[i] is the ID of the match

@@ -155,7 +155,7 @@ int main(int argc, const char *argv[])
 
         // extract 2D keypoints from current image
         vector<cv::KeyPoint> keypoints; // create empty feature list for current image
-        string detectorType = "BRISK";
+        string detectorType = "FAST"; //SHITOMASI, HARRIS, FAST, BRISK, ORB, SIFT, AKAZE
         detKeypoints(keypoints, imgGray, detectorType);
         res.detector = detectorType;
 
@@ -182,9 +182,9 @@ int main(int argc, const char *argv[])
         /* EXTRACT KEYPOINT DESCRIPTORS */
 
         cv::Mat descriptors;
-        string descriptorType = "BRIEF"; // BRISK, BRIEF, ORB, FREAK, AKAZE, SIFT
-        descKeypoints((dataBuffer.end() - 1)->keypoints, (dataBuffer.end() - 1)->cameraImg, descriptors, descriptorType);
-        res.descriptor = descriptorType;
+        string descriptorName = "BRIEF"; // BRISK, BRIEF, ORB, FREAK, AKAZE, SIFT
+        descKeypoints((dataBuffer.end() - 1)->keypoints, (dataBuffer.end() - 1)->cameraImg, descriptors, descriptorName);
+        res.descriptor = descriptorName;
 
         // push descriptors for current frame to end of data buffer
         (dataBuffer.end() - 1)->descriptors = descriptors;
@@ -199,7 +199,7 @@ int main(int argc, const char *argv[])
 
             vector<cv::DMatch> matches;
             string matcherType = "MAT_FLANN";        // MAT_BF, MAT_FLANN
-            string descriptorType = "DES_BINARY";      // DES_BINARY, DES_HOG
+            string descriptorType = (descriptorName.compare("SIFT") == 0) ? "DES_HOG" : "DES_BINARY";;      // DES_BINARY, DES_HOG
             string selectorType = "SEL_KNN";       // SEL_NN, SEL_KNN
 
             matchDescriptors((dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints,
@@ -295,7 +295,6 @@ int main(int argc, const char *argv[])
                     clusterKptMatchesWithROI(*currBB, (dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints, (dataBuffer.end() - 1)->kptMatches);                    
                     computeTTCCamera((dataBuffer.end() - 2)->keypoints, (dataBuffer.end() - 1)->keypoints, currBB->kptMatches, sensorFrameRate, ttcCamera);
                     res.TTCCamera.push_back(ttcCamera);
-                    std::cout << "ttcLidar " << ttcLidar << std::endl;
                     //// EOF STUDENT ASSIGNMENT
 
                     // Visualize the vehicle ahead and the lidar points/keypoints
