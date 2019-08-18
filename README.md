@@ -97,6 +97,7 @@ Some main observations:
 - The observations from the midterm project are confirmed: FAST+BRIEF is a valid selection.
 - FAST detector seems to deliver the best results (due to the fact that the keypoints are well distributed)
 - Harris detector completely fails due to the few keypoints found on the car itself.
+- With Shithomasi, Harris, ORB and BRISK detector, there are quite some outliers in the TTC calculation, probably because there are many keypoints outside the car or very close to the edge of the car.
 
 Two exemplary result charts:
 ![TTC Comparison](images/TTC_Camera_Fast.png)
